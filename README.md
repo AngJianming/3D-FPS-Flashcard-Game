@@ -14,3 +14,6 @@ An AI will help with providing question related to the pdf, doc, word, md file t
 The host can host a server and edit the how many seconds every question should last. They also can edit things like
 how many question, how big or small the balloon have to be so that Players have to aim better, and more...
 
+So, if you’re a gamer looking to make better use of your gaming time and skills, or a student who wants to enjoy studying, 
+[FPS Quiz] is the solution. We believe that the future of education and entertainment is about seamless integration, 
+and we’re leading the way.
