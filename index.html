@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple FPS Game</title>
+    <style>
+        body, html {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const gl = canvas.getContext('webgl');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        if (!gl) {
+            alert('WebGL not supported, falling back on experimental-webgl');
+        }
+
+        // Vertex shader program
+        const vsSource = `
+            attribute vec4 aVertexPosition;
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+            void main(void) {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+            }
+        `;
+
+        // Fragment shader program
+        const fsSource = `
+            void main(void) {
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);  // white color for objects
+            }
+        `;
+
+        // Compile shaders
+        function loadShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+        const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+        const shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+        }
+
+        gl.useProgram(shaderProgram);
+
+        // Shader attributes and uniforms
+        const programInfo = {
+            attribLocations: {
+                vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+            },
+            uniformLocations: {
+                projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
+                modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+            },
+        };
+
+        // Cube vertices
+        const positions = [
+            -1.0, -1.0,  1.0,
+             1.0, -1.0,  1.0,
+             1.0,  1.0,  1.0,
+            -1.0,  1.0,  1.0,
+
+            -1.0, -1.0, -1.0,
+             1.0, -1.0, -1.0,
+             1.0,  1.0, -1.0,
+            -1.0,  1.0, -1.0,
+        ];
+
+        const indices = [
+            0,  1,  2,      0,  2,  3,    // front
+            4,  5,  6,      4,  6,  7,    // back
+            0,  1,  5,      0,  5,  4,    // bottom
+            2,  3,  7,      2,  7,  6,    // top
+            0,  3,  7,      0,  7,  4,    // left
+            1,  2,  6,      1,  6,  5,    // right
+        ];
+
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        const indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
+        // Movement variables
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let playerPosition = [0.0, 0.0, -6.0];
+
+        window.addEventListener('keydown', (event) => {
+            if (event.code === 'KeyW') moveForward = true;
+            if (event.code === 'KeyS') moveBackward = true;
+            if (event.code === 'KeyA') moveLeft = true;
+            if (event.code === 'KeyD') moveRight = true;
+        });
+
+        window.addEventListener('keyup', (event) => {
+            if (event.code === 'KeyW') moveForward = false;
+            if (event.code === 'KeyS') moveBackward = false;
+            if (event.code === 'KeyA') moveLeft = false;
+            if (event.code === 'KeyD') moveRight = false;
+        });
+
+        // Rendering loop
+        function render() {
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+
+            if (moveForward) playerPosition[2] += 0.1;
+            if (moveBackward) playerPosition[2] -= 0.1;
+            if (moveLeft) playerPosition[0] -= 0.1;
+            if (moveRight) playerPosition[0] += 0.1;
+
+            const fieldOfView = 45 * Math.PI / 180;
+            const aspect = canvas.clientWidth / canvas.clientHeight;
+            const zNear = 0.1;
+            const zFar = 100.0;
+            const projectionMatrix = mat4.create();
+
+            mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
+
+            const modelViewMatrix = mat4.create();
+            mat4.translate(modelViewMatrix, modelViewMatrix, playerPosition);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+            gl.uniformMatrix4fv(programInfo.uniformLocations.projectionMatrix, false, projectionMatrix);
+            gl.uniformMatrix4fv(programInfo.uniformLocations.modelViewMatrix, false, modelViewMatrix);
+
+            gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0);
+
+            requestAnimationFrame(render);
+        }
+
+        requestAnimationFrame(render);
+    </script>
+</body>
+</html>
