@@ -1,180 +1,1394 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple FPS Game</title>
+    <title>3D FPS Game</title>
+    <link rel="icon" href="images/favicon.png" type="image/x-icon">
     <style>
-        body,
-        html {
-            margin: 0;
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            width: 100%;
+            color: #ffffff;
+            text-align: center;
+            top: 10px;
+            font-family: Arial, sans-serif;
+            z-index: 1;
+        }
+        #scoreboard {
+            position: absolute;
+            width: 200px;
+            color: #ffffff;
+            bottom: 10px;
+            right: 10px;
+            font-family: Arial, sans-serif;
+            z-index: 1;
+            text-align: right;
+        }
+        #fpsCounter {
+            position: absolute;
+            width: 100px;
+            color: #ffffff;
+            top: 10px;
+            right: 10px;
+            font-family: Arial, sans-serif;
+            z-index: 1;
+            text-align: right;
+        }
+        #powerUpsDisplay {
+            position: absolute;
+            width: 300px;
+            color: #ffffff;
+            bottom: 10px;
+            left: 10px;
+            font-family: Arial, sans-serif;
+            z-index: 1;
+            text-align: left;
+        }
+        #healthBarContainer {
+            position: absolute;
+            bottom: 50px; /* Just above the power-ups display */
+            left: 10px;
+            width: 300px;
+            height: 25px;
+            background-color: #555;
+            border: 2px solid #fff;
+            z-index: 1;
             overflow: hidden;
         }
-
-        canvas {
-            display: block;
+        #healthBar {
+            width: 100%;
+            height: 100%;
+            background-color: #0f0; /* Green */
+            transition: width 0.3s ease;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            margin-left: -10px;
+            margin-top: -10px;
+            z-index: 2;
+            pointer-events: none;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: white;
+        }
+        #crosshair::before {
+            left: 9px;
+            top: 0;
+            width: 2px;
+            height: 20px;
+        }
+        #crosshair::after {
+            left: 0;
+            top: 9px;
+            width: 20px;
+            height: 2px;
+        }
+        #message {
+            position: absolute;
+            width: 100%;
+            color: #ffffff;
+            text-align: center;
+            top: 50px;
+            font-family: Arial, sans-serif;
+            z-index: 1;
+            font-size: 24px;
+            text-shadow: 1px 1px 2px #000;
+            display: none;
+        }
+        /* Black overlay for level transitions */
+        #blackOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            z-index: 10;
+            display: none;
+        }
+        #loadingText {
+            position: absolute;
+            width: 100%;
+            color: #ffffff;
+            text-align: center;
+            top: 50%;
+            transform: translateY(-50%);
+            font-family: Arial, sans-serif;
+            font-size: 36px;
         }
     </style>
 </head>
-
 <body>
-    <canvas id="gameCanvas"></canvas>
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const gl = canvas.getContext('webgl');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
 
-        if (!gl) {
-            alert('WebGL not supported, falling back on experimental-webgl');
+<div id="info">Click to play. Use W/A/S/D to move, mouse to look, and left-click to shoot. Press 'M' to toggle minimap.</div>
+<div id="scoreboard">Round: 1<br>Enemies Remaining: 0</div>
+<div id="healthBarContainer">
+    <div id="healthBar"></div>
+</div>
+<div id="powerUpsDisplay"></div>
+<div id="fpsCounter">FPS: 0</div>
+<div id="crosshair"></div>
+<div id="message"></div>
+<div id="blackOverlay">
+    <div id="loadingText">Loading next level...</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+    // Basic setup
+    let scene, camera, renderer;
+    let controlsEnabled = false;
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+    let prevTime = performance.now();
+    let velocity = new THREE.Vector3();
+    let direction = new THREE.Vector3();
+
+    // Player setup
+    let raycaster;
+    const bullets = [];
+    let gun;
+    let playerHealth = 100; // Initialize player health
+
+    // Enemy and Wave Management
+    const enemies = [];
+    let round = 1;
+    let enemiesRemaining = 0;
+    let waveInProgress = false;
+
+    // Movement variables
+    const moveSpeed = 400.0;
+    const lookSpeed = 0.003;
+
+    // Mouse controls
+    let pitchObject, yawObject;
+
+    // FPS Counter
+    let fpsInterval, now, then, elapsed;
+
+    // Minimap
+    let minimapCamera, minimapRenderer, minimapScene;
+    let minimapScale = 0.05;
+    let isMinimapExpanded = false;
+    let playerMarker;
+
+    // Collision and Maze
+    const collidableMeshList = [];
+    let maze;
+    let mazeSize; // Will be initialized based on level
+    const cellSize = 40;
+
+    // Maze size configuration
+    const initialMazeSize = 15; // Starting maze size (must be odd)
+    const mazeSizeIncrement = 4; // Increase maze size by 4 each level to keep it odd
+
+    // Pathfinding
+    let grid = [];
+
+    // Minimap walls
+    const minimapWalls = [];
+
+    // Power-ups
+    const powerUps = [];
+    const activePowerUps = {};
+    const powerUpTypes = [
+        {
+            name: 'Walk Through Walls',
+            color: 0x0000ff, // Blue
+            duration: 30,
+            effect: 'walkThroughWalls',
+        },
+        {
+            name: 'Fast Shooting',
+            color: 0xff0000, // Red
+            duration: 30,
+            effect: 'fastShooting',
+        }
+    ];
+
+    // Floor
+    let floor, floorSize, floorGeometry, floorMaterial;
+
+    // Initialize the scene
+    init();
+    startAnimating(60); // Target 60 FPS
+
+    function init() {
+        // Scene and Camera
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb); // Sky blue background
+
+        // Minimap Scene
+        minimapScene = new THREE.Scene();
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 5000);
+
+        // Create a pitch and yaw object for the camera
+        pitchObject = new THREE.Object3D();
+        pitchObject.add(camera);
+
+        yawObject = new THREE.Object3D();
+        yawObject.position.y = 20; // Player height
+        yawObject.add(pitchObject);
+        scene.add(yawObject);
+
+        // Renderer
+        renderer = new THREE.WebGLRenderer({ antialias: false }); // Disabled antialiasing
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = false; // Disabled shadows
+        document.body.appendChild(renderer.domElement);
+
+        // Minimap Renderer
+        minimapRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: true }); // Disabled antialiasing
+        minimapRenderer.setSize(200, 200);
+        minimapRenderer.shadowMap.enabled = false; // Disabled shadows
+        minimapRenderer.domElement.style.position = 'absolute';
+        minimapRenderer.domElement.style.top = '10px';
+        minimapRenderer.domElement.style.left = '10px';
+        minimapRenderer.domElement.style.border = '2px solid #ffffff';
+        minimapRenderer.domElement.style.zIndex = '1';
+        document.body.appendChild(minimapRenderer.domElement);
+
+        // Minimap Camera
+        minimapCamera = new THREE.OrthographicCamera(-window.innerWidth, window.innerWidth, window.innerHeight, -window.innerHeight, 0.1, 5000);
+        minimapCamera.rotation.order = 'YXZ';
+
+        // Player Marker
+        const playerMarkerGeometry = new THREE.CircleGeometry(5, 6); // Reduced segments
+        const playerMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        playerMarker = new THREE.Mesh(playerMarkerGeometry, playerMarkerMaterial);
+        playerMarker.rotation.x = -Math.PI / 2; // Face upwards
+        minimapScene.add(playerMarker);
+
+        // Controls
+        document.addEventListener('click', function () {
+            if (!controlsEnabled) {
+                document.body.requestPointerLock();
+            }
+        }, false);
+
+        document.addEventListener('pointerlockchange', lockChange, false);
+
+        function lockChange() {
+            if (document.pointerLockElement === document.body) {
+                controlsEnabled = true;
+                document.getElementById('info').style.display = 'none';
+            } else {
+                controlsEnabled = false;
+                document.getElementById('info').style.display = '';
+            }
         }
 
-        // Vertex shader program
-        const vsSource = `
-            attribute vec4 aVertexPosition;
-            uniform mat4 uModelViewMatrix;
-            uniform mat4 uProjectionMatrix;
-            void main(void) {
-                gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+        // Mouse controls
+        const onMouseMove = function (event) {
+            if (controlsEnabled) {
+                const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+                const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+
+                yawObject.rotation.y -= movementX * lookSpeed;
+                pitchObject.rotation.x -= movementY * lookSpeed;
+                pitchObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObject.rotation.x));
             }
-        `;
+        };
+        document.addEventListener('mousemove', onMouseMove, false);
 
-        // Fragment shader program
-        const fsSource = `
-            void main(void) {
-                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);  // white color for objects
+        // Keyboard controls
+        const onKeyDown = function (event) {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW':
+                    moveForward = true;
+                    break;
+                case 'ArrowLeft':
+                case 'KeyA':
+                    moveLeft = true;
+                    break;
+                case 'ArrowDown':
+                case 'KeyS':
+                    moveBackward = true;
+                    break;
+                case 'ArrowRight':
+                case 'KeyD':
+                    moveRight = true;
+                    break;
+                case 'KeyM':
+                    toggleMinimap();
+                    break;
             }
-        `;
-
-        // Compile shaders
-        function loadShader(gl, type, source) {
-            const shader = gl.createShader(type);
-            gl.shaderSource(shader, source);
-            gl.compileShader(shader);
-
-            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
-                gl.deleteShader(shader);
-                return null;
-            }
-            return shader;
-        }
-
-        const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
-        const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
-
-        const shaderProgram = gl.createProgram();
-        gl.attachShader(shaderProgram, vertexShader);
-        gl.attachShader(shaderProgram, fragmentShader);
-        gl.linkProgram(shaderProgram);
-
-        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
-            console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
-        }
-
-        gl.useProgram(shaderProgram);
-
-        // Shader attributes and uniforms
-        const programInfo = {
-            attribLocations: {
-                vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
-            },
-            uniformLocations: {
-                projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
-                modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
-            },
         };
 
-        // Cube vertices
-        const positions = [
-            -1.0, -1.0, 1.0,
-            1.0, -1.0, 1.0,
-            1.0, 1.0, 1.0,
-            -1.0, 1.0, 1.0,
+        const onKeyUp = function (event) {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW':
+                    moveForward = false;
+                    break;
+                case 'ArrowLeft':
+                case 'KeyA':
+                    moveLeft = false;
+                    break;
+                case 'ArrowDown':
+                case 'KeyS':
+                    moveBackward = false;
+                    break;
+                case 'ArrowRight':
+                case 'KeyD':
+                    moveRight = false;
+                    break;
+            }
+        };
 
-            -1.0, -1.0, -1.0,
-            1.0, -1.0, -1.0,
-            1.0, 1.0, -1.0,
-            -1.0, 1.0, -1.0,
-        ];
+        document.addEventListener('keydown', onKeyDown, false);
+        document.addEventListener('keyup', onKeyUp, false);
 
-        const indices = [
-            0, 1, 2, 0, 2, 3,    // front
-            4, 5, 6, 4, 6, 7,    // back
-            0, 1, 5, 0, 5, 4,    // bottom
-            2, 3, 7, 2, 7, 6,    // top
-            0, 3, 7, 0, 7, 4,    // left
-            1, 2, 6, 1, 6, 5,    // right
-        ];
+        // Shooting
+        document.addEventListener('mousedown', function (event) {
+            if (event.button === 0 && controlsEnabled) { // Left-click
+                shoot();
+            }
+        }, false);
 
-        const positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+        // Raycaster for shooting
+        raycaster = new THREE.Raycaster();
 
-        const indexBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+        // Player's Gun
+        createGun();
 
-        // Movement variables
-        let moveForward = false;
-        let moveBackward = false;
-        let moveLeft = false;
-        let moveRight = false;
-        let playerPosition = [0.0, 0.0, -6.0];
+        // Generate the maze and create the maze geometry
+        generateMaze();
+        createMaze();
 
-        window.addEventListener('keydown', (event) => {
-            if (event.code === 'KeyW') moveForward = true;
-            if (event.code === 'KeyS') moveBackward = true;
-            if (event.code === 'KeyA') moveLeft = true;
-            if (event.code === 'KeyD') moveRight = true;
-        });
+        // Start the first wave
+        startWave();
 
-        window.addEventListener('keyup', (event) => {
-            if (event.code === 'KeyW') moveForward = false;
-            if (event.code === 'KeyS') moveBackward = false;
-            if (event.code === 'KeyA') moveLeft = false;
-            if (event.code === 'KeyD') moveRight = false;
-        });
+        // Window resize
+        window.addEventListener('resize', onWindowResize, false);
 
-        // Rendering loop
-        function render() {
-            gl.clearColor(0.0, 0.0, 0.0, 1.0);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            gl.enable(gl.DEPTH_TEST);
+        // Initialize health bar
+        updateHealthBar();
+    }
 
-            if (moveForward) playerPosition[2] += 0.1;
-            if (moveBackward) playerPosition[2] -= 0.1;
-            if (moveLeft) playerPosition[0] -= 0.1;
-            if (moveRight) playerPosition[0] += 0.1;
+    function toggleMinimap() {
+        if (isMinimapExpanded) {
+            // Shrink minimap
+            minimapRenderer.setSize(200, 200);
+            minimapRenderer.domElement.style.width = '200px';
+            minimapRenderer.domElement.style.height = '200px';
+            minimapRenderer.domElement.style.border = '2px solid #ffffff';
+            minimapRenderer.domElement.style.left = '10px';
+            minimapRenderer.domElement.style.top = '10px';
+            minimapRenderer.domElement.style.transform = 'none';
+            minimapRenderer.domElement.style.zIndex = '1';
+            isMinimapExpanded = false;
+            minimapScale = 0.05; // Adjusted minimap scale
+        } else {
+            // Expand minimap
+            minimapRenderer.setSize(600, 600);
+            minimapRenderer.domElement.style.width = '600px';
+            minimapRenderer.domElement.style.height = '600px';
+            minimapRenderer.domElement.style.border = '4px solid #ffffff';
+            minimapRenderer.domElement.style.left = '50%';
+            minimapRenderer.domElement.style.top = '50%';
+            minimapRenderer.domElement.style.transform = 'translate(-50%, -50%)';
+            minimapRenderer.domElement.style.zIndex = '2';
+            isMinimapExpanded = true;
+            minimapScale = 1.0; // Show full arena
+        }
+    }
 
-            const fieldOfView = 45 * Math.PI / 180;
-            const aspect = canvas.clientWidth / canvas.clientHeight;
-            const zNear = 0.1;
-            const zFar = 100.0;
-            const projectionMatrix = mat4.create();
+    function generateMaze() {
+        maze = [];
 
-            mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
+        // Calculate maze size based on the level
+        mazeSize = initialMazeSize + Math.floor((round - 1) / 2) * mazeSizeIncrement;
 
-            const modelViewMatrix = mat4.create();
-            mat4.translate(modelViewMatrix, modelViewMatrix, playerPosition);
-
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
-
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-
-            gl.uniformMatrix4fv(programInfo.uniformLocations.projectionMatrix, false, projectionMatrix);
-            gl.uniformMatrix4fv(programInfo.uniformLocations.modelViewMatrix, false, modelViewMatrix);
-
-            gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0);
-
-            requestAnimationFrame(render);
+        // Ensure mazeSize is odd
+        if (mazeSize % 2 === 0) {
+            mazeSize += 1;
         }
 
-        requestAnimationFrame(render);
-    </script>
-</body>
+        // Generate the maze
+        for (let x = 0; x < mazeSize; x++) {
+            maze[x] = [];
+            for (let y = 0; y < mazeSize; y++) {
+                maze[x][y] = 1; // Wall
+            }
+        }
 
+        const stack = [];
+        const startX = 1;
+        const startY = 1;
+
+        maze[startX][startY] = 0; // Path
+        stack.push({ x: startX, y: startY });
+
+        while (stack.length > 0) {
+            const current = stack.pop();
+            const neighbors = [];
+
+            const directions = [
+                { x: 0, y: -2 }, // Up
+                { x: 2, y: 0 },  // Right
+                { x: 0, y: 2 },  // Down
+                { x: -2, y: 0 }  // Left
+            ];
+
+            for (let i = 0; i < directions.length; i++) {
+                const nx = current.x + directions[i].x;
+                const ny = current.y + directions[i].y;
+
+                if (nx > 0 && nx < mazeSize - 1 && ny > 0 && ny < mazeSize - 1) {
+                    if (maze[nx][ny] === 1) {
+                        neighbors.push({ x: nx, y: ny });
+                    }
+                }
+            }
+
+            if (neighbors.length > 0) {
+                stack.push(current);
+
+                const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+
+                maze[(current.x + next.x) / 2][(current.y + next.y) / 2] = 0;
+                maze[next.x][next.y] = 0;
+
+                stack.push(next);
+            }
+        }
+    }
+
+    function createMaze() {
+        const wallMaterial = new THREE.MeshBasicMaterial({ color: 0xD2B48C }); // Tan color
+        const wallHeight = 40;
+
+        // Initialize grid as a 2D array
+        grid = [];
+        for (let x = 0; x < mazeSize; x++) {
+            grid[x] = [];
+            for (let y = 0; y < mazeSize; y++) {
+                if (maze[x][y] === 1) {
+                    const wallGeometry = new THREE.BoxGeometry(cellSize, wallHeight, cellSize);
+                    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                    wall.position.set(
+                        x * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2,
+                        wallHeight / 2,
+                        y * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2
+                    );
+                    scene.add(wall);
+
+                    // Add to minimap
+                    const wallClone = wall.clone();
+                    wallClone.material = new THREE.MeshBasicMaterial({ color: 0xD2B48C }); // Tan color
+                    minimapScene.add(wallClone);
+                    minimapWalls.push(wallClone);
+
+                    // Add wall to collision list
+                    collidableMeshList.push(wall);
+                }
+
+                // Prepare grid for pathfinding
+                grid[x][y] = {
+                    x: x,
+                    y: y,
+                    walkable: maze[x][y] === 0,
+                    f: 0,
+                    g: 0,
+                    h: 0,
+                    parent: null,
+                    closed: false,
+                    visited: false
+                };
+            }
+        }
+
+        // Create or update the floor
+        if (floor) {
+            scene.remove(floor);
+            minimapScene.remove(floor.minimapClone);
+        }
+
+        floorSize = mazeSize * cellSize;
+        floorGeometry = new THREE.PlaneGeometry(floorSize, floorSize);
+        floorMaterial = new THREE.MeshBasicMaterial({ color: 0x228B22 }); // Forest green floor
+        floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // Add floor to minimap
+        const floorClone = floor.clone();
+        floorClone.material = new THREE.MeshBasicMaterial({ color: 0x228B22 }); // Use MeshBasicMaterial
+        minimapScene.add(floorClone);
+        floor.minimapClone = floorClone;
+
+        // Set player starting position
+        yawObject.position.set(
+            1 * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2,
+            yawObject.position.y,
+            1 * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2
+        );
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        // Update minimap renderer size
+        if (isMinimapExpanded) {
+            minimapRenderer.setSize(600, 600);
+        } else {
+            minimapRenderer.setSize(200, 200);
+        }
+    }
+
+    function startAnimating(fps) {
+        fpsInterval = 1000 / fps;
+        then = performance.now();
+        animate();
+    }
+
+    function animate(newTime) {
+        requestAnimationFrame(animate);
+
+        now = performance.now();
+        elapsed = now - then;
+
+        if (elapsed > fpsInterval) {
+            then = now - (elapsed % fpsInterval);
+
+            if (controlsEnabled) {
+                const delta = (now - prevTime) / 1000;
+
+                velocity.x -= velocity.x * 8.0 * delta; // Reduced damping for smoother movement
+                velocity.z -= velocity.z * 8.0 * delta;
+
+                // Corrected direction calculation
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveLeft) - Number(moveRight);
+                direction.normalize();
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * moveSpeed * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * moveSpeed * delta;
+
+                // Move the player with collision detection
+                movePlayer(delta);
+
+                prevTime = now;
+
+                // Update gun position
+                updateGunPosition();
+
+                // Update enemies
+                updateEnemies(delta);
+
+                // Update bullets
+                updateBullets(delta);
+
+                // Update power-ups
+                updatePowerUps(delta);
+
+                // Check if wave is completed
+                if (enemiesRemaining <= 0 && !waveInProgress) {
+                    waveInProgress = true;
+                    showMessage(`Round ${round}: Finished`);
+                    showBlackOverlay(); // Show black overlay
+                    setTimeout(() => {
+                        round++;
+                        regenerateMaze();
+                        startWave();
+                        hideBlackOverlay(); // Hide black overlay
+                        waveInProgress = false;
+                    }, 2000); // 2 seconds delay before next wave
+                }
+            }
+
+            renderer.render(scene, camera);
+
+            // Update Minimap
+            updateMinimap();
+
+            // Update FPS Counter
+            const currentFps = Math.round(1000 / elapsed);
+            document.getElementById('fpsCounter').innerText = `FPS: ${currentFps}`;
+        }
+    }
+
+    function movePlayer(delta) {
+        // Move along X axis
+        yawObject.translateX(velocity.x * delta);
+
+        // Check for collision
+        const playerRadius = 5; // Adjust as needed
+        const playerSphere = new THREE.Sphere(yawObject.position.clone(), playerRadius);
+
+        let collision = false;
+        if (!activePowerUps.walkThroughWalls) {
+            for (let i = 0; i < collidableMeshList.length; i++) {
+                const mesh = collidableMeshList[i];
+                const obstacleBox = new THREE.Box3().setFromObject(mesh);
+                if (obstacleBox.intersectsSphere(playerSphere)) {
+                    collision = true;
+                    break;
+                }
+            }
+        }
+
+        if (collision) {
+            // Move back along X axis
+            yawObject.translateX(-velocity.x * delta);
+            velocity.x = 0;
+        }
+
+        // Move along Z axis
+        yawObject.translateZ(velocity.z * delta);
+
+        // Check for collision
+        playerSphere.center.copy(yawObject.position);
+        collision = false;
+        if (!activePowerUps.walkThroughWalls) {
+            for (let i = 0; i < collidableMeshList.length; i++) {
+                const mesh = collidableMeshList[i];
+                const obstacleBox = new THREE.Box3().setFromObject(mesh);
+                if (obstacleBox.intersectsSphere(playerSphere)) {
+                    collision = true;
+                    break;
+                }
+            }
+        }
+
+        if (collision) {
+            // Move back along Z axis
+            yawObject.translateZ(-velocity.z * delta);
+            velocity.z = 0;
+        }
+
+        // Keep the player inside the maze
+        const roomLimit = (mazeSize * cellSize) / 2 - cellSize;
+        yawObject.position.x = THREE.MathUtils.clamp(yawObject.position.x, -roomLimit, roomLimit);
+        yawObject.position.z = THREE.MathUtils.clamp(yawObject.position.z, -roomLimit, roomLimit);
+    }
+
+    function createGun() {
+        const gunGeometry = new THREE.BoxGeometry(2, 2, 8);
+        const gunMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+        gun = new THREE.Mesh(gunGeometry, gunMaterial);
+        pitchObject.add(gun);
+    }
+
+    function updateGunPosition() {
+        // Position the gun in front of the camera
+        gun.position.set(1.5, -2, -5);
+        gun.rotation.set(0, 0, 0);
+    }
+
+    function startWave() {
+        enemiesRemaining = 0;
+        const enemiesToSpawn = 4 + (round - 1) * 2; // Increase enemy count each round
+        for (let i = 0; i < enemiesToSpawn; i++) {
+            spawnEnemy();
+        }
+        document.getElementById('scoreboard').innerHTML = `Round: ${round}<br>Enemies Remaining: ${enemiesRemaining}`;
+        showMessage(`Round ${round}: Start`);
+
+        // Spawn new power-ups
+        spawnPowerUps();
+    }
+
+    function spawnEnemy() {
+        const enemy = createEnemy();
+
+        const minDistance = 100; // Minimum distance from player
+        let spawnPosition = new THREE.Vector3();
+
+        let validPosition = false;
+        while (!validPosition) {
+            const mazeX = Math.floor(Math.random() * mazeSize);
+            const mazeY = Math.floor(Math.random() * mazeSize);
+
+            if (maze[mazeX][mazeY] === 0) {
+                spawnPosition.x = mazeX * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2;
+                spawnPosition.z = mazeY * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2;
+                spawnPosition.y = 0;
+
+                if (spawnPosition.distanceTo(yawObject.position) >= minDistance) {
+                    validPosition = true;
+                }
+            }
+        }
+
+        enemy.position.copy(spawnPosition);
+
+        // Initialize walk time for animations
+        enemy.userData.walkTime = 0;
+
+        // Initialize attack cooldown
+        enemy.userData.lastAttackTime = 0;
+
+        // Calculate bounding box for the enemy
+        const box = new THREE.Box3().setFromObject(enemy);
+        enemy.userData.boundingBox = box;
+
+        enemies.push(enemy);
+        scene.add(enemy);
+        enemiesRemaining++;
+        document.getElementById('scoreboard').innerHTML = `Round: ${round}<br>Enemies Remaining: ${enemiesRemaining}`;
+
+        // Create and add enemy marker to minimap
+        const enemyMarkerGeometry = new THREE.CircleGeometry(5, 6); // Reduced segments
+        const enemyMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const enemyMarker = new THREE.Mesh(enemyMarkerGeometry, enemyMarkerMaterial);
+        enemyMarker.rotation.x = -Math.PI / 2; // Face upwards
+        enemy.userData.minimapMarker = enemyMarker;
+        minimapScene.add(enemyMarker);
+    }
+
+    function createEnemy() {
+        const enemy = new THREE.Group();
+
+        // Increase the size of the enemy
+        enemy.scale.set(0.5, 0.5, 0.5);
+
+        // Simplified enemy model to reduce vertices
+        const materialRed = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const materialPink = new THREE.MeshBasicMaterial({ color: 0xffcccc });
+        const materialBlue = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+
+        // Torso
+        const torsoGeometry = new THREE.BoxGeometry(10, 15, 5);
+        const torso = new THREE.Mesh(torsoGeometry, materialRed);
+        torso.position.y = 15;
+        enemy.add(torso);
+
+        // Head
+        const headGeometry = new THREE.BoxGeometry(8, 8, 8);
+        const head = new THREE.Mesh(headGeometry, materialPink);
+        head.position.y = 28;
+        enemy.add(head);
+
+        // Arms
+        const armGeometry = new THREE.BoxGeometry(3, 15, 3);
+        armGeometry.translate(0, -7.5, 0); // Adjust pivot to shoulder
+        const leftArm = new THREE.Mesh(armGeometry, materialRed);
+        leftArm.position.set(-7, 22.5, 0); // Positioned at shoulder height
+        const rightArm = new THREE.Mesh(armGeometry, materialRed);
+        rightArm.position.set(7, 22.5, 0);
+        enemy.add(leftArm);
+        enemy.add(rightArm);
+
+        // Legs
+        const legGeometry = new THREE.BoxGeometry(4, 15, 4);
+        legGeometry.translate(0, -7.5, 0); // Adjust pivot to hip
+        const leftLeg = new THREE.Mesh(legGeometry, materialBlue);
+        leftLeg.position.set(-3, 15, 0); // Positioned at hip height
+        const rightLeg = new THREE.Mesh(legGeometry, materialBlue);
+        rightLeg.position.set(3, 15, 0);
+        enemy.add(leftLeg);
+        enemy.add(rightLeg);
+
+        return enemy;
+    }
+
+    function updateEnemies(delta) {
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            const enemy = enemies[i];
+
+            // Move enemy with pathfinding
+            moveEnemyWithPathfinding(enemy, delta);
+
+            // Update bounding box position
+            enemy.userData.boundingBox.setFromObject(enemy);
+
+            // Rotate enemy to face the player
+            const enemyDir = new THREE.Vector3();
+            enemyDir.subVectors(yawObject.position, enemy.position);
+            enemy.rotation.y = Math.atan2(enemyDir.x, enemyDir.z);
+
+            // Simple collision detection with player
+            if (enemy.position.distanceTo(yawObject.position) < 10) {
+                // Enemy is close enough to attack
+                if (!enemy.userData.lastAttackTime || now - enemy.userData.lastAttackTime > 1000) {
+                    // Enemy can attack
+                    playerHealth -= 20;
+                    updateHealthBar();
+                    enemy.userData.lastAttackTime = now; // Record last attack time
+
+                    // Show attack animation (optional)
+                    // You can add code here to animate the enemy's arms punching
+
+                    // Check if player is dead
+                    if (playerHealth <= 0) {
+                        showMessage('You Died');
+                        controlsEnabled = false;
+                        document.exitPointerLock();
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 3000);
+                        return; // Stop updating enemies
+                    }
+                }
+            }
+
+            // Update walking animation
+            enemy.userData.walkTime += delta;
+            const walkSpeed = 5;
+            const angle = Math.sin(enemy.userData.walkTime * walkSpeed) * 0.5;
+
+            // Left and right legs are the last two children of enemy group
+            enemy.children[4].rotation.x = angle; // Left leg
+            enemy.children[5].rotation.x = -angle; // Right leg
+
+            // Animate arms
+            enemy.children[2].rotation.x = -angle; // Left arm
+            enemy.children[3].rotation.x = angle; // Right arm
+
+            // Update enemy marker position
+            if (enemy.userData.minimapMarker) {
+                enemy.userData.minimapMarker.position.set(enemy.position.x, 1, enemy.position.z);
+            }
+        }
+    }
+
+    function moveEnemyWithPathfinding(enemy, delta) {
+        // Update pathfinding timer
+        if (enemy.userData.pathTimer === undefined) {
+            enemy.userData.pathTimer = 0;
+        }
+        enemy.userData.pathTimer += delta;
+
+        // Calculate enemy's current cell
+        const enemyCellX = Math.floor((enemy.position.x + (mazeSize * cellSize) / 2) / cellSize);
+        const enemyCellY = Math.floor((enemy.position.z + (mazeSize * cellSize) / 2) / cellSize);
+
+        // Calculate player's current cell
+        const playerCellX = Math.floor((yawObject.position.x + (mazeSize * cellSize) / 2) / cellSize);
+        const playerCellY = Math.floor((yawObject.position.z + (mazeSize * cellSize) / 2) / cellSize);
+
+        // Recalculate path every 2 seconds or if the player moves more than one cell away
+        if (!enemy.userData.path || enemy.userData.path.length === 0 || enemy.userData.pathTimer > 2 ||
+            Math.abs(enemy.userData.targetCellX - playerCellX) > 1 || Math.abs(enemy.userData.targetCellY - playerCellY) > 1) {
+            // Reset pathfinding timer
+            enemy.userData.pathTimer = 0;
+
+            // A* Pathfinding
+            const path = findPath(enemyCellX, enemyCellY, playerCellX, playerCellY);
+            if (path && path.length > 1) {
+                enemy.userData.path = path;
+                enemy.userData.targetCellX = playerCellX;
+                enemy.userData.targetCellY = playerCellY;
+                enemy.userData.currentPathIndex = 1; // Start at the next cell
+            } else {
+                enemy.userData.path = null;
+                return; // No path found
+            }
+        }
+
+        if (enemy.userData.path && enemy.userData.currentPathIndex < enemy.userData.path.length) {
+            // Get next cell in the path
+            const nextCell = enemy.userData.path[enemy.userData.currentPathIndex];
+            const targetPosition = new THREE.Vector3(
+                nextCell.x * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2,
+                enemy.position.y,
+                nextCell.y * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2
+            );
+
+            // Move towards target position
+            const direction = new THREE.Vector3();
+            direction.subVectors(targetPosition, enemy.position);
+            const distance = direction.length();
+
+            if (distance < 1) {
+                // Reached the cell, move to next cell in path
+                enemy.userData.currentPathIndex++;
+            } else {
+                direction.normalize();
+                const moveDistance = 30 * delta; // Adjusted speed
+                const movement = direction.clone().multiplyScalar(moveDistance);
+
+                enemy.position.add(movement);
+            }
+        } else {
+            // Reached end of path
+            enemy.userData.path = null;
+        }
+    }
+
+    // Implement a Min-Heap (Priority Queue) for the Open Set
+    class MinHeap {
+        constructor() {
+            this.heap = [];
+        }
+
+        push(node) {
+            this.heap.push(node);
+            this.bubbleUp(this.heap.length - 1);
+        }
+
+        pop() {
+            const topVal = this.heap[0];
+            const bottom = this.heap.pop();
+            if (this.heap.length > 0) {
+                this.heap[0] = bottom;
+                this.sinkDown(0);
+            }
+            return topVal;
+        }
+
+        bubbleUp(n) {
+            const element = this.heap[n];
+            while (n > 0) {
+                const parentN = Math.floor((n + 1) / 2) - 1;
+                const parent = this.heap[parentN];
+                if (element.f >= parent.f) break;
+                this.heap[parentN] = element;
+                this.heap[n] = parent;
+                n = parentN;
+            }
+        }
+
+        sinkDown(n) {
+            const length = this.heap.length;
+            const element = this.heap[n];
+
+            while (true) {
+                let child2N = (n + 1) * 2;
+                let child1N = child2N - 1;
+                let swap = null;
+
+                if (child1N < length) {
+                    const child1 = this.heap[child1N];
+                    if (child1.f < element.f) {
+                        swap = child1N;
+                    }
+                }
+                if (child2N < length) {
+                    const child2 = this.heap[child2N];
+                    if ((swap === null ? element.f : this.heap[child1N].f) > child2.f) {
+                        swap = child2N;
+                    }
+                }
+                if (swap === null) break;
+
+                this.heap[n] = this.heap[swap];
+                this.heap[swap] = element;
+                n = swap;
+            }
+        }
+
+        size() {
+            return this.heap.length;
+        }
+
+        isEmpty() {
+            return this.heap.length === 0;
+        }
+    }
+
+    function findPath(startX, startY, endX, endY) {
+        // Reset nodes
+        for (let x = 0; x < mazeSize; x++) {
+            for (let y = 0; y < mazeSize; y++) {
+                const node = grid[x][y];
+                node.f = 0;
+                node.g = 0;
+                node.h = 0;
+                node.parent = null;
+                node.closed = false;
+                node.visited = false;
+            }
+        }
+
+        const startNode = grid[startX][startY];
+        const endNode = grid[endX][endY];
+
+        const openSet = new MinHeap();
+        openSet.push(startNode);
+        startNode.visited = true;
+
+        while (!openSet.isEmpty()) {
+            const currentNode = openSet.pop();
+
+            if (currentNode === endNode) {
+                // Path found
+                const path = [];
+                let current = currentNode;
+                while (current) {
+                    path.push(current);
+                    current = current.parent;
+                }
+                return path.reverse();
+            }
+
+            currentNode.closed = true;
+
+            const neighbors = getNeighbors(currentNode);
+
+            for (let i = 0; i < neighbors.length; i++) {
+                const neighbor = neighbors[i];
+
+                if (neighbor.closed || !neighbor.walkable) {
+                    continue;
+                }
+
+                const tentativeG = currentNode.g + 1;
+
+                if (!neighbor.visited || tentativeG < neighbor.g) {
+                    neighbor.visited = true;
+                    neighbor.parent = currentNode;
+                    neighbor.h = heuristic(neighbor, endNode);
+                    neighbor.g = tentativeG;
+                    neighbor.f = neighbor.g + neighbor.h;
+
+                    openSet.push(neighbor);
+                }
+            }
+        }
+
+        // No path found
+        return null;
+    }
+
+    function getNeighbors(node) {
+        const neighbors = [];
+        const directions = [
+            { x: 0, y: -1 }, // Up
+            { x: 1, y: 0 },  // Right
+            { x: 0, y: 1 },  // Down
+            { x: -1, y: 0 }  // Left
+        ];
+
+        for (let i = 0; i < directions.length; i++) {
+            const nx = node.x + directions[i].x;
+            const ny = node.y + directions[i].y;
+
+            if (nx >= 0 && nx < mazeSize && ny >= 0 && ny < mazeSize) {
+                neighbors.push(grid[nx][ny]);
+            }
+        }
+
+        return neighbors;
+    }
+
+    function heuristic(a, b) {
+        // Manhattan distance
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    }
+
+    function shoot() {
+        if (bullets.length > 50) return; // Limit the number of active bullets
+
+        const bulletGeometry = new THREE.SphereGeometry(1, 6, 6); // Reduced segments
+        const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
+
+        // Start bullet from the gun's tip
+        const bulletPosition = new THREE.Vector3();
+        bulletPosition.setFromMatrixPosition(gun.matrixWorld);
+        bullet.position.copy(bulletPosition);
+
+        // Get the direction the camera is facing
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+
+        // Adjust bullet speed if fast shooting is active
+        const bulletSpeed = activePowerUps.fastShooting ? 1000 : 500;
+        bullet.userData.velocity = direction.clone().multiplyScalar(bulletSpeed);
+
+        bullets.push(bullet);
+        scene.add(bullet);
+    }
+
+    function updateBullets(delta) {
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            const bullet = bullets[i];
+            bullet.position.add(bullet.userData.velocity.clone().multiplyScalar(delta));
+
+            // Remove bullet if it's too far
+            if (bullet.position.distanceTo(yawObject.position) > 1000) {
+                scene.remove(bullet);
+                bullets.splice(i, 1);
+                continue;
+            }
+
+            // Check for collision with enemies
+            for (let j = enemies.length - 1; j >= 0; j--) {
+                const enemy = enemies[j];
+
+                // Check collision using bounding boxes
+                const bulletBox = new THREE.Box3().setFromObject(bullet);
+                if (bulletBox.intersectsBox(enemy.userData.boundingBox)) {
+                    scene.remove(enemy);
+                    enemies.splice(j, 1);
+                    enemiesRemaining--;
+                    document.getElementById('scoreboard').innerHTML = `Round: ${round}<br>Enemies Remaining: ${enemiesRemaining}`;
+                    scene.remove(bullet);
+                    bullets.splice(i, 1);
+
+                    // Remove enemy marker
+                    if (enemy.userData.minimapMarker) {
+                        minimapScene.remove(enemy.userData.minimapMarker);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // Power-Up Functions
+    function spawnPowerUps() {
+        // Remove existing power-ups
+        powerUps.forEach(powerUp => {
+            scene.remove(powerUp.mesh);
+            if (powerUp.minimapMarker) {
+                minimapScene.remove(powerUp.minimapMarker);
+            }
+        });
+        powerUps.length = 0;
+
+        // Determine number of power-ups to spawn
+        const powerUpsToSpawn = 5; // Adjust as needed
+
+        for (let i = 0; i < powerUpsToSpawn; i++) {
+            const powerUpType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+            spawnPowerUp(powerUpType);
+        }
+    }
+
+    function spawnPowerUp(type) {
+        const geometry = new THREE.CylinderGeometry(5, 5, 2, 12); // Coin shape
+        geometry.translate(0, 1, 0); // Adjust so bottom sits on ground
+        const material = new THREE.MeshBasicMaterial({ color: type.color });
+        const mesh = new THREE.Mesh(geometry, material);
+        // mesh.rotation.x = -Math.PI / 2; // Remove this line to keep it upright
+
+        const minDistance = 50; // Minimum distance from player
+        let spawnPosition = new THREE.Vector3();
+
+        let validPosition = false;
+        while (!validPosition) {
+            const mazeX = Math.floor(Math.random() * mazeSize);
+            const mazeY = Math.floor(Math.random() * mazeSize);
+
+            if (maze[mazeX][mazeY] === 0) {
+                spawnPosition.x = mazeX * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2;
+                spawnPosition.z = mazeY * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2;
+                spawnPosition.y = 0; // On ground level
+
+                if (spawnPosition.distanceTo(yawObject.position) >= minDistance) {
+                    validPosition = true;
+                }
+            }
+        }
+
+        mesh.position.copy(spawnPosition);
+
+        // Add to scene and powerUps array
+        scene.add(mesh);
+
+        // Add to minimap
+        const markerGeometry = new THREE.CircleGeometry(3, 6);
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: type.color });
+        const minimapMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+        minimapMarker.rotation.x = -Math.PI / 2;
+        minimapMarker.position.set(spawnPosition.x, 1, spawnPosition.z);
+        minimapScene.add(minimapMarker);
+
+        powerUps.push({
+            type: type,
+            mesh: mesh,
+            minimapMarker: minimapMarker
+        });
+    }
+
+    function updatePowerUps(delta) {
+        // Rotate power-ups for a visual effect
+        powerUps.forEach(powerUp => {
+            powerUp.mesh.rotation.y += delta;
+        });
+
+        // Check for collision with player
+        for (let i = powerUps.length - 1; i >= 0; i--) {
+            const powerUp = powerUps[i];
+            const dx = powerUp.mesh.position.x - yawObject.position.x;
+            const dz = powerUp.mesh.position.z - yawObject.position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+            if (distance < 10) {
+                // Activate power-up
+                activatePowerUp(powerUp.type);
+
+                // Remove power-up from scene and arrays
+                scene.remove(powerUp.mesh);
+                minimapScene.remove(powerUp.minimapMarker);
+                powerUps.splice(i, 1);
+
+                // Show message
+                showMessage(`Picked up ${powerUp.type.name} Power-Up!`);
+            }
+        }
+
+        // Update active power-ups
+        for (let key in activePowerUps) {
+            activePowerUps[key] -= delta;
+            if (activePowerUps[key] <= 0) {
+                delete activePowerUps[key];
+            }
+        }
+
+        // Update power-up display
+        updatePowerUpsDisplay();
+    }
+
+    function activatePowerUp(type) {
+        activePowerUps[type.effect] = type.duration;
+    }
+
+    function updatePowerUpsDisplay() {
+        const display = document.getElementById('powerUpsDisplay');
+        let html = '';
+        for (let key in activePowerUps) {
+            const timeLeft = Math.ceil(activePowerUps[key]);
+            const type = powerUpTypes.find(p => p.effect === key);
+            html += `<span style="color: #${type.color.toString(16)}">${type.name}: ${timeLeft}s</span><br>`;
+        }
+        display.innerHTML = html;
+    }
+
+    // Function to update health bar
+    function updateHealthBar() {
+        const healthBar = document.getElementById('healthBar');
+        healthBar.style.width = playerHealth + '%';
+
+        // Change color based on health
+        if (playerHealth > 60) {
+            healthBar.style.backgroundColor = '#0f0'; // Green
+        } else if (playerHealth > 30) {
+            healthBar.style.backgroundColor = '#ff0'; // Yellow
+        } else {
+            healthBar.style.backgroundColor = '#f00'; // Red
+        }
+    }
+
+    // Function to display messages
+    function showMessage(text) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.innerText = text;
+        messageDiv.style.display = 'block';
+        // Hide message after 3 seconds
+        setTimeout(() => {
+            messageDiv.style.display = 'none';
+        }, 3000);
+    }
+
+    // Functions to show and hide black overlay
+    function showBlackOverlay() {
+        document.getElementById('blackOverlay').style.display = 'block';
+    }
+
+    function hideBlackOverlay() {
+        document.getElementById('blackOverlay').style.display = 'none';
+    }
+
+    // Function to update the minimap
+    function updateMinimap() {
+        if (isMinimapExpanded) {
+            // Show full arena
+            const arenaSize = (mazeSize * cellSize) / 2;
+            minimapCamera.left = -arenaSize;
+            minimapCamera.right = arenaSize;
+            minimapCamera.top = arenaSize;
+            minimapCamera.bottom = -arenaSize;
+            minimapCamera.position.set(0, 1000, 0);
+        } else {
+            // Position the minimap camera above the player
+            minimapCamera.left = -window.innerWidth * minimapScale;
+            minimapCamera.right = window.innerWidth * minimapScale;
+            minimapCamera.top = window.innerHeight * minimapScale;
+            minimapCamera.bottom = -window.innerHeight * minimapScale;
+            minimapCamera.position.set(yawObject.position.x, 500, yawObject.position.z);
+        }
+        minimapCamera.updateProjectionMatrix();
+        minimapCamera.rotation.set(-Math.PI / 2, 0, 0);
+
+        // Adjust marker scales based on minimap state
+        const markerScale = isMinimapExpanded ? 3 : 1;
+        playerMarker.scale.set(markerScale, markerScale, markerScale);
+
+        enemies.forEach(enemy => {
+            if (enemy.userData.minimapMarker) {
+                enemy.userData.minimapMarker.scale.set(markerScale, markerScale, markerScale);
+            }
+        });
+
+        // Update player marker position
+        playerMarker.position.set(yawObject.position.x, 1, yawObject.position.z);
+
+        // Render the minimap scene
+        minimapRenderer.render(minimapScene, minimapCamera);
+    }
+
+    function regenerateMaze() {
+        // Clear existing maze
+        collidableMeshList.forEach(mesh => {
+            scene.remove(mesh);
+        });
+        collidableMeshList.length = 0;
+
+        // Clear existing maze walls from minimap
+        minimapWalls.forEach(wall => {
+            minimapScene.remove(wall);
+        });
+        minimapWalls.length = 0;
+
+        grid.length = 0;
+
+        // Remove enemies and their markers
+        enemies.forEach(enemy => {
+            scene.remove(enemy);
+            if (enemy.userData.minimapMarker) {
+                minimapScene.remove(enemy.userData.minimapMarker);
+            }
+        });
+        enemies.length = 0;
+
+        // Remove bullets
+        bullets.forEach(bullet => {
+            scene.remove(bullet);
+        });
+        bullets.length = 0;
+
+        // Remove power-ups
+        powerUps.forEach(powerUp => {
+            scene.remove(powerUp.mesh);
+            if (powerUp.minimapMarker) {
+                minimapScene.remove(powerUp.minimapMarker);
+            }
+        });
+        powerUps.length = 0;
+
+        // Generate new maze
+        generateMaze();
+        createMaze();
+
+        // Reset player position and rotation
+        yawObject.position.set(
+            1 * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2,
+            yawObject.position.y,
+            1 * cellSize - (mazeSize * cellSize) / 2 + cellSize / 2
+        );
+        yawObject.rotation.set(0, 0, 0);
+        pitchObject.rotation.set(0, 0, 0);
+
+        // Update minimap player marker position
+        playerMarker.position.set(yawObject.position.x, 1, yawObject.position.z);
+    }
+</script>
+
+</body>
 </html>
