@@ -1,5 +1,5 @@
 # 3D-FPS-Quiz-Game
-Super fun and interactive Web3.0 game for kids, teens, adults, students, lecturers and gamers.
+Super fun and interactive game for kids, teens, adults, students, lecturers and gamers.
 Gaming can be incredibly immersive and, well, sometimes a bit too addictive. 
 Meanwhile, students often struggle to stay motivated when it comes to studying.
 
