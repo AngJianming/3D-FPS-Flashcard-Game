@@ -55,7 +55,7 @@ The most notable aspect of this project is its rapid development time. Using GPT
 
 ## Demo
 
-Try the demo here: **not out yet**
+Try the demo here: (**not out yet**)
 
 ## Features
 
