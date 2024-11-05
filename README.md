@@ -1,5 +1,7 @@
-
-# 3D FPS Maze Zombie game
+# 3D-FPS-Quiz-Game
+Super fun and interactive game for kids, teens, adults, students, lecturers and gamers.
+Gaming can be incredibly immersive and, well, sometimes a bit too addictive. 
+Meanwhile, students often struggle to stay motivated when it comes to studying.
 
 <img src="images/favicon.png" alt="Game Logo" width="100" height="100">
 
@@ -43,7 +45,6 @@ So, if you’re a gamer looking to make better use of your gaming time and skill
 [FPS Quiz] is the solution. We believe that the future of education and entertainment is about seamless integration, 
 and we’re leading the way.
 
-This project is a demonstration of a 3D First-Person Shooter (FPS) maze game created using HTML, CSS, JavaScript, and the Three.js library. It showcases what's possible in browser-based 3D gaming and serves as a learning resource for those interested in game development with web technologies.
 
 <video width="640" height="360" controls>
   <source src="images/gameplay.mp4" type="video/mp4">
@@ -54,7 +55,7 @@ The most notable aspect of this project is its rapid development time. Using GPT
 
 ## Demo
 
-Try the demo here: https://mohdmahmodi.com/fps/
+Try the demo here: 
 
 ## Features
 
@@ -298,9 +299,9 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## Acknowledgments
 
-- Developed by: [Mohd Mahmodi](https://mohdmahmodi.com)
-- Contact: contact@mohdmahmodi.com
-- X / Twitter: [@mohdmahmodi](https://x.com/mohdmahmodi)
+- Developed by: [Ang Jianming]()
+- Contact: www.linkedin.com/in/ang-jianming-3a2a3a319
+- X / Twitter: [@angjianming](https://x.com/AngJianming)
 - GPT-O1 by OpenAI for development assistance
 - Three.js library for 3D rendering
 
