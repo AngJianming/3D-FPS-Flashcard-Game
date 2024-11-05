@@ -300,7 +300,7 @@ This project is open source and available under the [MIT License](LICENSE).
 ## Acknowledgments
 
 - Developed by: [Ang Jianming]()
-- Contact: contact@mohdmahmodi.com
+- Contact: www.linkedin.com/in/ang-jianming-3a2a3a319
 - X / Twitter: [@angjianming](https://x.com/AngJianming)
 - GPT-O1 by OpenAI for development assistance
 - Three.js library for 3D rendering
