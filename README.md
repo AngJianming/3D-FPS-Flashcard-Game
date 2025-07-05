@@ -60,7 +60,7 @@ The most notable aspect of this project is its rapid development time. Using GPT
 
 ## Demo
 
-Try the demo here: 
+Try the demo here: https://3d-fps-maze-game.vercel.app/
 
 ## Features
 
