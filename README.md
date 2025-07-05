@@ -1,9 +1,10 @@
-# 3D-FPS-Quiz-Game
-Super fun and interactive game for kids, teens, adults, students, lecturers and gamers.
-Gaming can be incredibly immersive and, well, sometimes a bit too addictive. 
-Meanwhile, students often struggle to stay motivated when it comes to studying.
+# 3D-FPS-Maze-game
+This project is a first-person shooter game set inside procedurally generated 3D mazes, entirely built with JavaScript and Three.js.
+<!-- Super fun and interactive maze game for kids, teens, adults, students, lecturers and gamers. -->
+<!-- Gaming can be incredibly immersive and, well, sometimes a bit too addictive. 
+Meanwhile, students often struggle to stay motivated when it comes to studying. -->
 
-<img src="images/favicon.png" alt="Game Logo" width="100" height="100">
+<!-- <img src="images/favicon.png" alt="Game Logo" width="100" height="100"> -->
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -29,27 +30,31 @@ Meanwhile, students often struggle to stay motivated when it comes to studying.
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
 
-## Introduction
+## 🎮 Introduction
 
-Introducing [FPS Quiz], a 3D FPS interactive game that’s as fun as any top-tier shooter, but with a unique twist. 
-The game will start by putting you in a shooting range. In this shooting range there will be question popping up and 
-the player will have to choose the correct answers by shooting the balloon.
+This game is designed to test your reflexes, strategic thinking, and navigation skills, it offers an immersive experience with:
 
-The question can vary whether it’s math, science, or history it's up to what ever documents you upload into the file.
-An AI will help with providing question related to the pdf, doc, word, md file that you uploaded.
+- Dynamic maze generation with increasing complexity
 
-The host can host a server and edit the how many seconds every question should last. They also can edit things like
-how many question, how big or small the balloon have to be so that Players have to aim better, and more...
+- Optimized enemy AI using A* pathfinding
 
-So, if you’re a gamer looking to make better use of your gaming time and skills, or a student who wants to enjoy studying, 
-[FPS Quiz] is the solution. We believe that the future of education and entertainment is about seamless integration, 
-and we’re leading the way.
+- Action-packed FPS mechanics
+
+- Tactical power-ups
+
+- Smooth level transitions and real-time performance monitoring
+
+As each round progresses, the maze grows larger, enemies grow smarter, and survival becomes more intense. A minimap, health system, and score tracking keep players engaged while performance-focused techniques ensure smooth gameplay even on complex levels.
+
+Whether you're looking to explore procedural generation, develop AI behavior, or dive into WebGL game development with Three.js, this project is both a playable game and a technical showcase of modern browser-based 3D development.
 
 
-<video width="640" height="360" controls>
+
+
+<!-- <video width="640" height="360" controls>
   <source src="images/gameplay.mp4" type="video/mp4">
   Your browser does not support the video tag.
-</video>
+</video> -->
 
 The most notable aspect of this project is its rapid development time. Using GPT-O1, OpenAI's latest language model with advanced reasoning capabilities, I was able to create this complex demonstration in less than 40 minutes.
 
@@ -244,12 +249,12 @@ Performance optimizations include:
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/3d-fps-maze-game.git
+   git clone https://github.com/yourusername/3D-FPS-Maze-game.git
    ```
 
 2. Navigate to the project directory:
    ```
-   cd 3d-fps-maze-game
+   cd 3D-FPS-Maze-game
    ```
 
 3. Open `index.html` in a modern web browser that supports WebGL.
